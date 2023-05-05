@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "halt_after_reset": true,
+    "configurations": [
+        {
+            "type": "probe-rs-debug",
+            "request": "launch",
+            "name": "probe_rs rtt-target eth_udp",
+            // ... <snip> ...
+            "coreConfigs": [
+                {
+                    "coreIndex": 0,
+                    "rttEnabled": true
+                }
+            ],
+            "env": {
+                "DEFMT_LOG": "info" //!MODIFY: Remove or use any of the supported DEFMT_LOG options.
+            }
+        }
+    ]
+}

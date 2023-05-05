@@ -1,0 +1,4 @@
+cargo:rustc-link-search=/home/lobanov/.cargo/registry/src/github.com-1ecc6299db9ec823/stm32-metapac-7.0.0/src/chips/stm32h743bi
+cargo:rustc-env=STM32_METAPAC_PAC_PATH=chips/stm32h743bi/pac.rs
+cargo:rustc-env=STM32_METAPAC_METADATA_PATH=chips/stm32h743bi/metadata.rs
+cargo:rerun-if-changed=build.rs

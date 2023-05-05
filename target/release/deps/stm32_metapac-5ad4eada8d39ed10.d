@@ -1,0 +1,13 @@
+/home/lobanov/code/rust-proj/stm32f7-embassy-eth/target/release/deps/stm32_metapac-5ad4eada8d39ed10.rmeta: /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/lib.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/common.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/metadata.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/chips/stm32f767zi/metadata.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/chips/stm32f767zi/../metadata_0253.rs
+
+/home/lobanov/code/rust-proj/stm32f7-embassy-eth/target/release/deps/libstm32_metapac-5ad4eada8d39ed10.rlib: /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/lib.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/common.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/metadata.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/chips/stm32f767zi/metadata.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/chips/stm32f767zi/../metadata_0253.rs
+
+/home/lobanov/code/rust-proj/stm32f7-embassy-eth/target/release/deps/stm32_metapac-5ad4eada8d39ed10.d: /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/lib.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/common.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/metadata.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/chips/stm32f767zi/metadata.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/chips/stm32f767zi/../metadata_0253.rs
+
+/home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/lib.rs:
+/home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/common.rs:
+/home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/metadata.rs:
+/home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/chips/stm32f767zi/metadata.rs:
+/home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/stm32-metapac-7.0.0/src/chips/stm32f767zi/../metadata_0253.rs:
+
+# env-dep:STM32_METAPAC_METADATA_PATH=chips/stm32f767zi/metadata.rs
