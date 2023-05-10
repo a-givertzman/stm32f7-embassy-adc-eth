@@ -1,1 +1,0 @@
-cargo:rustc-link-search=/home/lobanov/code/rust-proj/stm32f7-embassy-eth/target/thumbv7em-none-eabihf/release/build/defmt-254d20d15f1c5c0b/out

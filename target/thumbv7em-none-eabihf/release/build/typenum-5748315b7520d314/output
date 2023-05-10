@@ -1,3 +1,0 @@
-cargo:rerun-if-changed=build/main.rs
-cargo:rustc-env=TYPENUM_BUILD_CONSTS=/home/lobanov/code/rust-proj/stm32f7-embassy-eth/target/thumbv7em-none-eabihf/release/build/typenum-5748315b7520d314/out/consts.rs
-cargo:rustc-env=TYPENUM_BUILD_OP=/home/lobanov/code/rust-proj/stm32f7-embassy-eth/target/thumbv7em-none-eabihf/release/build/typenum-5748315b7520d314/out/op.rs
