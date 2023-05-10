@@ -1,9 +1,0 @@
-/home/lobanov/code/rust-proj/stm32f7-embassy-eth/target/thumbv7em-none-eabihf/debug/deps/embedded_nal_async-79b9c92864791734.rmeta: /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/lib.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/dns.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/stack/mod.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/stack/tcp.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/stack/udp.rs
-
-/home/lobanov/code/rust-proj/stm32f7-embassy-eth/target/thumbv7em-none-eabihf/debug/deps/embedded_nal_async-79b9c92864791734.d: /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/lib.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/dns.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/stack/mod.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/stack/tcp.rs /home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/stack/udp.rs
-
-/home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/lib.rs:
-/home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/dns.rs:
-/home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/stack/mod.rs:
-/home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/stack/tcp.rs:
-/home/lobanov/.cargo/registry/src/index.crates.io-6f17d22bba15001f/embedded-nal-async-0.4.0/src/stack/udp.rs:
