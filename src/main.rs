@@ -60,7 +60,7 @@
 
 use core::cell::RefCell;
 use core::mem;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
 use embassy_net::udp::UdpSocket;
 use heapless::Vec;
 
@@ -87,11 +87,13 @@ use {defmt_rtt as _, panic_probe as _};
 const SYN: u8 = 22;
 const EOT: u8 = 4;
 const UDP_PORT: u16 = 15180;
-const UDP_BUFFER_SIZE: usize = 512;
+const ADC_BUFFER_SIZE: usize = 1024;
+const UDP_BUFFER_SIZE: usize = ADC_BUFFER_SIZE * 2;
 
+static ADC_DONE: AtomicBool = AtomicBool::new(false);
 static ACT_BUFFER: AtomicUsize = AtomicUsize::new(1);
-static BUFFER1: Mutex<RefCell<Option<[u16; 512]>>> = Mutex::new(RefCell::new(None));
-static BUFFER2: Mutex<RefCell<Option<[u16; 512]>>> = Mutex::new(RefCell::new(None));
+static BUFFER1: Mutex<RefCell<Option<[u16; ADC_BUFFER_SIZE]>>> = Mutex::new(RefCell::new(None));
+static BUFFER2: Mutex<RefCell<Option<[u16; ADC_BUFFER_SIZE]>>> = Mutex::new(RefCell::new(None));
 
 
 macro_rules! singleton {
@@ -110,55 +112,57 @@ async fn net_task(stack: &'static Stack<Device>) -> ! {
     stack.run().await
 }
 
-const ADC_CYCLE: u64 = 102048;
+const ADC_CYCLE: u64 = 5925;
 
 #[embassy_executor::task]
 async fn run_high(adc: Option<Adc<'static, ADC1>>, mut pin: embassy_stm32::peripherals::PA3, mut delay: cortex_m::delay::Delay) {
     info!("ADC conversion started");
     let mut adc = adc.unwrap();
     let mut now = Instant::now().as_micros();
-    // loop {
-    cortex_m::interrupt::free(|cs| {
-        let b1: &mut [u16; 512];
-        let b2: &mut [u16; 512];
-        let mut br1 = BUFFER1.borrow(cs).borrow_mut();
-        b1 = br1.as_mut().unwrap();
-        let mut br2 = BUFFER2.borrow(cs).borrow_mut();
-        b2 = br2.as_mut().unwrap();
-        delay.delay_us(175);
+    let mut t = 0;
+    loop {
+        now = Instant::now().as_micros();
+        cortex_m::interrupt::free(|cs| {
+            let b1: &mut [u16; ADC_BUFFER_SIZE];
+            let b2: &mut [u16; ADC_BUFFER_SIZE];
+            let mut br1 = BUFFER1.borrow(cs).borrow_mut();
+            b1 = br1.as_mut().unwrap();
+            let mut br2 = BUFFER2.borrow(cs).borrow_mut();
+            b2 = br2.as_mut().unwrap();
+            delay.delay_us(175);
 
-        let mut act = 1;
-        let mut buffer: &mut [u16; 512];
-        let mut t = 0;
-        loop {
-            now = Instant::now().as_micros();
-            buffer = match act {
-                1 => b1,
-                _ => b2,
-            };
-            for i in 0..512 {
-                buffer[i] = adc.read(&mut pin);
-            }
-            act = match act {
-                1 => {
-                    ACT_BUFFER.store(2, Ordering::Relaxed);
-                    2
-                },
-                _ => {
-                    ACT_BUFFER.store(1, Ordering::Relaxed);
-                    1
+            let mut act = 1;
+            let mut buffer: &mut [u16; ADC_BUFFER_SIZE];
+            // loop {
+                buffer = match act {
+                    1 => b1,
+                    _ => b2,
+                };
+                for i in 0..ADC_BUFFER_SIZE {
+                    buffer[i] = adc.read(&mut pin);
                 }
-            };
-            t = ADC_CYCLE - (Instant::now().as_micros() - now);
-            if t < ADC_CYCLE {
-                delay.delay_us(t as u32);
-            }
-            // let elapsed = Instant::now().as_micros() - now;
-            // info!("ADC done in: {:?} us ({:?} us)", elapsed, elapsed / 512);
-        }
-        // info!("        [run_high] measured: {}", measured);
-    });
-    // }
+                act = match act {
+                    1 => {
+                        ACT_BUFFER.store(2, Ordering::Relaxed);
+                        2
+                    },
+                    _ => {
+                        ACT_BUFFER.store(1, Ordering::Relaxed);
+                        1
+                    }
+                };
+                ADC_DONE.store(true, Ordering::Relaxed);
+            // }
+            // info!("        [run_high] measured: {}", measured);
+        });
+        t = ADC_CYCLE - (Instant::now().as_micros() - now);
+        if t < ADC_CYCLE {
+            Timer::after(Duration::from_micros(ADC_CYCLE)).await;
+            // delay.delay_us(t as u32);
+        }        
+        // let elapsed = Instant::now().as_micros() - now;
+        // info!("ADC done in: {:?} us ({:?} us)", elapsed, elapsed / ADC_BUFFER_SIZE as u64);
+    }
 }
 
 #[embassy_executor::task]
@@ -202,7 +206,7 @@ static EXECUTOR_MED: InterruptExecutor = InterruptExecutor::new();
 
 #[interrupt]
 unsafe fn UART4() {
-    debug!("[interrupt] ADC");
+    // debug!("[interrupt] ADC");
     EXECUTOR_HIGH.on_interrupt()
 }
 
@@ -234,8 +238,8 @@ async fn main(mainSpawner: Spawner) -> ! {
 
     cortex_m::interrupt::free(|cs| {
         // enable_interrupt(&mut button);
-        BUFFER1.borrow(cs).borrow_mut().replace([0; 512]);
-        BUFFER2.borrow(cs).borrow_mut().replace([0; 512]);
+        BUFFER1.borrow(cs).borrow_mut().replace([0; ADC_BUFFER_SIZE]);
+        BUFFER2.borrow(cs).borrow_mut().replace([0; ADC_BUFFER_SIZE]);
         // NVIC::unmask(pac::Interrupt::EXTI15_10);
     });
 
@@ -298,7 +302,7 @@ async fn main(mainSpawner: Spawner) -> ! {
     let mut nvic: NVIC = unsafe { mem::transmute(()) };
 
     // High-priority executor: UART4, priority level 6
-    unsafe { nvic.set_priority(Interrupt::UART4, 7 << 4) };
+    unsafe { nvic.set_priority(Interrupt::UART4, 6 << 4) };
     let spawner = EXECUTOR_HIGH.start(Interrupt::UART4);
     unwrap!(spawner.spawn(
         run_high(Some(adc), adcPin, delay)
@@ -308,7 +312,7 @@ async fn main(mainSpawner: Spawner) -> ! {
     // Medium-priority executor: UART5, priority level 7
     unsafe { nvic.set_priority(Interrupt::UART5, 7 << 4) };
     let spawner = EXECUTOR_MED.start(Interrupt::UART5);
-    unwrap!(spawner.spawn(run_med()));
+    // unwrap!(spawner.spawn(run_med()));
     info!("Medium-priority task initialized");
 
     // Low priority executor: runs in thread mode, using WFE/SEV
@@ -333,8 +337,50 @@ async fn main(mainSpawner: Spawner) -> ! {
             let (_n, remoteAddr) = socket.recv_from(&mut bufDouble).await.unwrap();
             if handshakeReceived(&bufDouble) {
                 info!("received handshake from {:?}", remoteAddr);
+                let mut j: usize = 0;
                 loop {
-                    cortex_m::asm::wfe();
+                    while !ADC_DONE.load(Ordering::Relaxed) {
+                        Timer::after(Duration::from_micros(ADC_CYCLE / 2)).await;
+                    }
+                    cortex_m::interrupt::free(|cs| {
+                        let b1: &mut [u16; ADC_BUFFER_SIZE];
+                        let b2: &mut [u16; ADC_BUFFER_SIZE];
+                        let mut br1 = BUFFER1.borrow(cs).borrow_mut();
+                        b1 = br1.as_mut().unwrap();
+                        let mut br2 = BUFFER2.borrow(cs).borrow_mut();
+                        b2 = br2.as_mut().unwrap();
+                        
+                        let buffer = match ACT_BUFFER.load(Ordering::Relaxed) {
+                            1 => b2,
+                            _ => b1,
+                        };
+                        let mut bytes: [u8; 2];
+                        for i in 0..(ADC_BUFFER_SIZE) {
+                            bytes = buffer[i].to_be_bytes();
+                            j = i * 2;
+                            bufDouble[j] = bytes[0];
+                            bufDouble[j + 1] = bytes[1];
+                        }                        
+                    });
+
+                    if socket.is_open() {
+                        // logElapsed("ADC transfering start", &mut before);
+                        let r = socket.send_to(&bufDouble, remoteAddr).await;
+                        if let Err(e) = r {
+                            info!("write error: {:?}", e);
+                            break;
+                        }
+                        // logElapsed("ADC transfering done", &mut before);
+                    } else {
+                        info!("socket is not open");
+                        break;
+                    }            
+            
+
+
+                    // logElapsed("ADC cycle done", &mut before);
+                    // Timer::after(Duration::from_millis(1000)).await;
+                    // cortex_m::asm::wfe();
                 }
             }
         }
