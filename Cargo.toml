@@ -6,9 +6,9 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 embassy-sync = { version = "0.2.0", features = ["defmt"] }
-embassy-executor = { version = "0.2.0", path = "../embassy/embassy-executor", features = ["arch-cortex-m", "executor-thread", "defmt", "integrated-timers"] }
+embassy-executor = { version = "0.2.0", path = "../embassy/embassy-executor", features = ["arch-cortex-m", "executor-thread", "defmt", "integrated-timers", "executor-interrupt"] }
 embassy-time = { version = "0.1.0", path = "../embassy/embassy-time", features = ["defmt", "defmt-timestamp-uptime", "unstable-traits", "tick-hz-32_768"] }
-embassy-stm32 = { version = "0.1.0", path = "../embassy/embassy-stm32", features = ["nightly", "defmt", "stm32f767zi", "unstable-pac", "time-driver-any", "exti"]  }
+embassy-stm32 = { version = "0.1.0", path = "../embassy/embassy-stm32", features = ["nightly", "defmt", "stm32f767zi", "unstable-pac", "time-driver-any", "chrono", "exti"]  }
 # embassy-stm32 = { version = "0.1.0", path = "../embassy/embassy-stm32", features = ["nightly", "defmt", "stm32f767Zi", "time-driver-any", "exti", "unstable-pac", "unstable-traits"] }
 embassy-net = { path = "../embassy/embassy-net", features = ["defmt", "nightly", "udp", "tcp", "dhcpv4", "medium-ethernet", "unstable-traits", "proto-ipv6"] }
 embedded-io = { version = "0.4.0", features = ["async"] }
@@ -32,6 +32,8 @@ micromath = "2.0.0"
 # stm32-fmc = "0.2.4"
 # embedded-storage = "0.3.0"
 static_cell = "1.0"
+chrono = { version = "^0.4", default-features = false}
+
 
 # cargo build/run
 [profile.dev]
@@ -54,7 +56,7 @@ overflow-checks = true # <-
 # cargo build/run --release
 [profile.release]
 codegen-units = 1
-debug = 2
+debug = 0 # 2
 debug-assertions = false # <-
 incremental = false
 lto = 'fat'
