@@ -1,100 +1,48 @@
-#![allow(non_snake_case)]
-//! This example showcases how to create multiple Executor instances to run tasks at
-//! different priority levels.
-//!
-//! Low priority executor runs in thread mode (not interrupt), and uses `sev` for signaling
-//! there's work in the queue, and `wfe` for waiting for work.
-//!
-//! Medium and high priority executors run in two interrupts with different priorities.
-//! Signaling work is done by pending the interrupt. No "waiting" needs to be done explicitly, since
-//! when there's work the interrupt will trigger and run the executor.
-//!
-//! Sample output below. Note that high priority ticks can interrupt everything else, and
-//! medium priority computations can interrupt low priority computations, making them to appear
-//! to take significantly longer time.
-//!
-//! ```not_rust
-//!     [med] Starting long computation
-//!     [med] done in 992 ms
-//!         [high] tick!
-//! [low] Starting long computation
-//!     [med] Starting long computation
-//!         [high] tick!
-//!         [high] tick!
-//!     [med] done in 993 ms
-//!     [med] Starting long computation
-//!         [high] tick!
-//!         [high] tick!
-//!     [med] done in 993 ms
-//! [low] done in 3972 ms
-//!     [med] Starting long computation
-//!         [high] tick!
-//!         [high] tick!
-//!     [med] done in 993 ms
-//! ```
-//!
-//! For comparison, try changing the code so all 3 tasks get spawned on the low priority executor.
-//! You will get an output like the following. Note that no computation is ever interrupted.
-//!
-//! ```not_rust
-//!         [high] tick!
-//!     [med] Starting long computation
-//!     [med] done in 496 ms
-//! [low] Starting long computation
-//! [low] done in 992 ms
-//!     [med] Starting long computation
-//!     [med] done in 496 ms
-//!         [high] tick!
-//! [low] Starting long computation
-//! [low] done in 992 ms
-//!         [high] tick!
-//!     [med] Starting long computation
-//!     [med] done in 496 ms
-//!         [high] tick!
-//! ```
-//!
-
 #![no_std]
 #![no_main]
 #![feature(type_alias_impl_trait)]
+#![allow(non_snake_case)]
 
-use core::cell::RefCell;
-use core::mem;
-use core::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
-use embassy_net::udp::UdpSocket;
-use heapless::Vec;
 
-use cortex_m::delay::Delay;
-use cortex_m::interrupt::Mutex;
-use cortex_m::peripheral::NVIC;
-// use cortex_m_rt::entry;
+
 use defmt::*;
-use embassy_executor::{Executor, InterruptExecutor, Spawner};
-use embassy_net::{Stack, Ipv4Address, Ipv4Cidr, StackResources, PacketMetadata};
+use heapless::Vec;
+use embassy_executor::{Spawner};
+use embassy_net::udp::UdpSocket;
+use embassy_net::{Ipv4Address, Ipv4Cidr, Stack, StackResources, udp::PacketMetadata};
+use embassy_time::{Duration, Timer, Delay, Instant};
 use embassy_stm32::adc::{Adc, SampleTime};
-use embassy_stm32::eth::{Ethernet, PacketQueue};
 use embassy_stm32::eth::generic_smi::GenericSMI;
-use embassy_stm32::peripherals::{ADC1, ETH};
+use embassy_stm32::eth::{Ethernet, PacketQueue};
+use embassy_stm32::peripherals::ETH;
 use embassy_stm32::rng::Rng;
 use embassy_stm32::time::mhz;
 use embassy_stm32::{interrupt, Config};
-use embassy_stm32::pac::Interrupt;
-use embassy_time::{Duration, Instant, Timer};
 use rand_core::RngCore;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
+
+// T, uc	QSIZE
+// 976.563	1 024
+// 488.281	2 048
+// 244.141	4 096
+// 122.070	8 192
+// 61.035	16 384
+// 30.518	32 768
+// 15.259	65 536
+// 7.629	131 072
+// 3.815	262 144
+// 1.907	524 288
+
+const UDP_PORT: u16 = 15180;
+
+
 const SYN: u8 = 22;
 const EOT: u8 = 4;
-const UDP_PORT: u16 = 15180;
-const ADC_BUFFER_SIZE: usize = 1024;
-const UDP_BUFFER_SIZE: usize = ADC_BUFFER_SIZE * 2;
-
-static ADC_DONE: AtomicBool = AtomicBool::new(false);
-static ACT_BUFFER: AtomicUsize = AtomicUsize::new(1);
-static BUFFER1: Mutex<RefCell<Option<[u16; ADC_BUFFER_SIZE]>>> = Mutex::new(RefCell::new(None));
-static BUFFER2: Mutex<RefCell<Option<[u16; ADC_BUFFER_SIZE]>>> = Mutex::new(RefCell::new(None));
-
+// const ADC_READ_DELAY: Duration = Duration::from_micros(61);
+const ADC_BUF_SIZE: usize = 512;
+const UDP_BUF_SIZE: usize = 1024;
 
 macro_rules! singleton {
     ($val:expr) => {{
@@ -112,139 +60,41 @@ async fn net_task(stack: &'static Stack<Device>) -> ! {
     stack.run().await
 }
 
-const ADC_CYCLE: u64 = 5925;
-
 #[embassy_executor::task]
-async fn run_high(adc: Option<Adc<'static, ADC1>>, mut pin: embassy_stm32::peripherals::PA3, mut delay: cortex_m::delay::Delay) {
-    info!("ADC conversion started");
-    let mut adc = adc.unwrap();
-    let mut now = Instant::now().as_micros();
-    let mut t = 0;
+async fn run() {
     loop {
-        now = Instant::now().as_micros();
-        cortex_m::interrupt::free(|cs| {
-            let b1: &mut [u16; ADC_BUFFER_SIZE];
-            let b2: &mut [u16; ADC_BUFFER_SIZE];
-            let mut br1 = BUFFER1.borrow(cs).borrow_mut();
-            b1 = br1.as_mut().unwrap();
-            let mut br2 = BUFFER2.borrow(cs).borrow_mut();
-            b2 = br2.as_mut().unwrap();
-            delay.delay_us(175);
-
-            let mut act = 1;
-            let mut buffer: &mut [u16; ADC_BUFFER_SIZE];
-            // loop {
-                buffer = match act {
-                    1 => b1,
-                    _ => b2,
-                };
-                for i in 0..ADC_BUFFER_SIZE {
-                    buffer[i] = adc.read(&mut pin);
-                }
-                act = match act {
-                    1 => {
-                        ACT_BUFFER.store(2, Ordering::Relaxed);
-                        2
-                    },
-                    _ => {
-                        ACT_BUFFER.store(1, Ordering::Relaxed);
-                        1
-                    }
-                };
-                ADC_DONE.store(true, Ordering::Relaxed);
-            // }
-            // info!("        [run_high] measured: {}", measured);
-        });
-        t = ADC_CYCLE - (Instant::now().as_micros() - now);
-        if t < ADC_CYCLE {
-            Timer::after(Duration::from_micros(ADC_CYCLE)).await;
-            // delay.delay_us(t as u32);
-        }        
-        // let elapsed = Instant::now().as_micros() - now;
-        // info!("ADC done in: {:?} us ({:?} us)", elapsed, elapsed / ADC_BUFFER_SIZE as u64);
+        info!("tick");
+        Timer::after(Duration::from_secs(1)).await;
     }
 }
 
-#[embassy_executor::task]
-async fn run_med() {
-    loop {
-        let start = Instant::now();
-        info!("    [med] Starting long computation");
-
-        // Spin-wait to simulate a long CPU computation
-        cortex_m::asm::delay(8_000_000); // ~1 second
-
-        let end = Instant::now();
-        let ms = end.duration_since(start).as_ticks() / 33;
-        info!("    [med] done in {} ms", ms);
-
-        Timer::after(Duration::from_millis(3000)).await;
-        // Timer::after(Duration::from_ticks(23421)).await;
-    }
-}
 
 #[embassy_executor::task]
-async fn run_low() {
-    loop {
-        let start = Instant::now();
-        info!("[low] Starting long computation");
-
-        // Spin-wait to simulate a long CPU computation
-        cortex_m::asm::delay(16_000_000); // ~2 seconds
-
-        let end = Instant::now();
-        let ms = end.duration_since(start).as_ticks() / 33;
-        info!("[low] done in {} ms", ms);
-
-        Timer::after(Duration::from_millis(100)).await;
-    }
+async fn run_high() {
+    info!("run_high enter");
+    // loop {
+    //     info!("        [high] tick!");
+    //     Timer::after(Duration::from_ticks(27374)).await;
+    // }
+    info!("run_high exit");
 }
 
-static EXECUTOR_HIGH: InterruptExecutor = InterruptExecutor::new();
-static EXECUTOR_MED: InterruptExecutor = InterruptExecutor::new();
-// static EXECUTOR_LOW: StaticCell<Executor> = StaticCell::new();
 
-#[interrupt]
-unsafe fn UART4() {
-    // debug!("[interrupt] ADC");
-    EXECUTOR_HIGH.on_interrupt()
-}
-
-#[interrupt]
-unsafe fn UART5() {
-    debug!("[interrupt] UART5");
-    EXECUTOR_MED.on_interrupt()
-}
 
 #[embassy_executor::main]
-async fn main(mainSpawner: Spawner) -> ! {
-// #[entry]
-// fn main() -> ! {
+async fn main(spawner: Spawner) -> ! {
     info!("[main] enter");
+
     let mut config = Config::default();
     config.rcc.sys_ck = Some(mhz(216));
-    let freq = config.rcc.sys_ck.unwrap().0;
 
-    let cp = cortex_m::Peripherals::take().unwrap();
     let dp = embassy_stm32::init(config);
 
-    let delay = Delay::new(cp.SYST, freq);
-    let adcPin = dp.PA3;
+    let mut adcPin = dp.PA3;
+    let mut adc = Adc::new(dp.ADC1, &mut Delay);
+    adc.set_sample_time(SampleTime::Cycles144);
 
-    let mut adc = Adc::new(dp.ADC1, &mut embassy_time::Delay);
-    // adc.set_sample_time(SampleTime::Cycles480);
-    adc.set_sample_time(SampleTime::Cycles28);
-    // unsafe{ adcRef = Some(adc); }
-
-    cortex_m::interrupt::free(|cs| {
-        // enable_interrupt(&mut button);
-        BUFFER1.borrow(cs).borrow_mut().replace([0; ADC_BUFFER_SIZE]);
-        BUFFER2.borrow(cs).borrow_mut().replace([0; ADC_BUFFER_SIZE]);
-        // NVIC::unmask(pac::Interrupt::EXTI15_10);
-    });
-
-
-
+    // let mut vrefint_channel = adc.enable_vrefint();
 
     // Generate random seed.
     let mut rng = Rng::new(dp.RNG);
@@ -287,108 +137,85 @@ async fn main(mainSpawner: Spawner) -> ! {
     );
 
     // Launch network task
-    unwrap!(mainSpawner.spawn(net_task(&stack)));
+    unwrap!(spawner.spawn(net_task(&stack)));
     info!("Network task initialized");
 
     // Then we can use it!
     let mut rx_meta = [PacketMetadata::EMPTY; 16];
-    let mut rx_buffer = [0; UDP_BUFFER_SIZE];
+    let mut rx_buffer = [0; UDP_BUF_SIZE];
     let mut tx_meta = [PacketMetadata::EMPTY; 16];
-    let mut tx_buffer = [0; UDP_BUFFER_SIZE];
-    let mut bufDouble = [0; UDP_BUFFER_SIZE];    
+    let mut tx_buffer = [0; UDP_BUF_SIZE];
+    let mut udpBuf = [0; UDP_BUF_SIZE];    
 
-
-    // let _p = embassy_stm32::init(Default::default());
-    let mut nvic: NVIC = unsafe { mem::transmute(()) };
-
-    // High-priority executor: UART4, priority level 6
-    unsafe { nvic.set_priority(Interrupt::UART4, 6 << 4) };
-    let spawner = EXECUTOR_HIGH.start(Interrupt::UART4);
-    unwrap!(spawner.spawn(
-        run_high(Some(adc), adcPin, delay)
-    ));
-    info!("High-priority task initialized");
-
-    // Medium-priority executor: UART5, priority level 7
-    unsafe { nvic.set_priority(Interrupt::UART5, 7 << 4) };
-    let spawner = EXECUTOR_MED.start(Interrupt::UART5);
-    // unwrap!(spawner.spawn(run_med()));
-    info!("Medium-priority task initialized");
-
-    // Low priority executor: runs in thread mode, using WFE/SEV
-    // let executor = EXECUTOR_LOW.init(Executor::new());
-    // executor.run(|spawner| {
-    //     unwrap!(spawner.spawn(run_low()));
-    // });
-
+    // let now = NaiveDate::from_ymd_opt(2023, 5, 10)
+    //     .unwrap()
+    //     .and_hms_opt(10, 30, 15)
+    //     .unwrap();
+    // let mut rtc = Rtc::new(dp.RTC, RtcConfig::default());
+    // rtc.set_datetime(DateTime::from(now)).expect("datetime not set");
+    // let mut before = Instant::now();
     loop {
         let mut socket = UdpSocket::new(stack, &mut rx_meta, &mut rx_buffer, &mut tx_meta, &mut tx_buffer);
+        
         info!("UDP bind on {}:{}...", localIp, UDP_PORT);
-        let r = socket.bind(UDP_PORT);
-        info!("UDP bind result: {:?}", r);
-        if let Err(e) = r {
-            info!("UDP bind error: {:?}", e);
-            continue;
-        }
-        info!("UDP server ready!");
-        loop {
-
-            info!("waiting handshake message...");
-            let (_n, remoteAddr) = socket.recv_from(&mut bufDouble).await.unwrap();
-            if handshakeReceived(&bufDouble) {
-                info!("received handshake from {:?}", remoteAddr);
-                let mut j: usize = 0;
+        match socket.bind(UDP_PORT) {
+            Ok(_) => {
+                info!("UDP server ready!");
                 loop {
-                    while !ADC_DONE.load(Ordering::Relaxed) {
-                        Timer::after(Duration::from_micros(ADC_CYCLE / 2)).await;
-                    }
-                    cortex_m::interrupt::free(|cs| {
-                        let b1: &mut [u16; ADC_BUFFER_SIZE];
-                        let b2: &mut [u16; ADC_BUFFER_SIZE];
-                        let mut br1 = BUFFER1.borrow(cs).borrow_mut();
-                        b1 = br1.as_mut().unwrap();
-                        let mut br2 = BUFFER2.borrow(cs).borrow_mut();
-                        b2 = br2.as_mut().unwrap();
-                        
-                        let buffer = match ACT_BUFFER.load(Ordering::Relaxed) {
-                            1 => b2,
-                            _ => b1,
-                        };
-                        let mut bytes: [u8; 2];
-                        for i in 0..(ADC_BUFFER_SIZE) {
-                            bytes = buffer[i].to_be_bytes();
-                            j = i * 2;
-                            bufDouble[j] = bytes[0];
-                            bufDouble[j + 1] = bytes[1];
-                        }                        
-                    });
-
-                    if socket.is_open() {
-                        // logElapsed("ADC transfering start", &mut before);
-                        let r = socket.send_to(&bufDouble, remoteAddr).await;
-                        if let Err(e) = r {
-                            info!("write error: {:?}", e);
-                            break;
+                    info!("waiting handshake message...");
+                    let (_n, remoteAddr) = socket.recv_from(&mut udpBuf).await.unwrap();
+                    // debug!("received message from {:?}: {:?}", remoteAddr, bufDouble);
+                    if handshakeReceived(&udpBuf) {
+                        info!("received handshake from {:?}", remoteAddr);
+                        loop {
+                            // let now = Instant::now().as_micros();
+                            for i in (0..UDP_BUF_SIZE).step_by(2) {
+                                let measured = adc.read(&mut adcPin);
+                                let bytes = measured.to_be_bytes();
+                                udpBuf[i] = bytes[0];
+                                udpBuf[i + 1] = bytes[1];
+                                // Timer::after(ADC_READ_DELAY).await;
+                                // info!("measured: {}", measured);
+                            }
+                            // let elapsed = Instant::now().as_micros() - now;
+                            // info!("ADC done in: {:?} us ({:?} us)", elapsed, elapsed / ADC_BUF_SIZE as u64);
+                            if socket.is_open() {
+                                match socket.send_to(&udpBuf, remoteAddr).await {
+                                    Ok(_) => {}
+                                    Err(err) => {
+                                        info!("Udp socket write error: {:?}", err);
+                                    }
+                                };
+                            } else {
+                                info!("socket is not open");
+                                break;
+                            }            
+                            // Timer::after(Duration::from_millis(1000)).await;
                         }
-                        // logElapsed("ADC transfering done", &mut before);
                     } else {
-                        info!("socket is not open");
-                        break;
-                    }            
-            
-
-
-                    // logElapsed("ADC cycle done", &mut before);
-                    // Timer::after(Duration::from_millis(1000)).await;
-                    // cortex_m::asm::wfe();
+                        info!("received wrong handshake from({:?}): {:?}", remoteAddr, udpBuf);
+                    }
                 }
             }
-        }
+            Err(err) => {
+                warn!("UDP bind error: {:?}", err);
+            }
+        };
     }
 }
-
+//
+// fn logElapsed(message: &str, before: &mut Instant) {
+//     let now = Instant::now();
+//     let elapsed = now.as_micros() - before.as_micros();
+//     *before = now;
+//     info!("{}: {:?}", message, elapsed);
+// }
 /// return true if handshake received
-fn handshakeReceived(buf: & [u8; UDP_BUFFER_SIZE]) -> bool {
+fn handshakeReceived(buf: & [u8; UDP_BUF_SIZE]) -> bool {
     buf[0] == SYN && buf[1] == EOT
 }
 
+// icrementing index up to QSIZE, then return it to 0
+// fn incrementLoop(index: usize) -> usize {
+//     (index + 1) % QSIZE
+// }
